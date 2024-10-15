@@ -36,7 +36,7 @@ void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
 
     calc_account<<<N_BLOCKS, BLOCK_SIZE>>>(changes, account, sum, clients, periods);
 
-    N_BLOCKS = periods; // (periods + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    N_BLOCKS = (periods + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     calc_sum<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);
 }

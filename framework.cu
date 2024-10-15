@@ -4,8 +4,8 @@
 
 // nvcc -o framework framework.cu
 
-// airacuda:  200 Mv/s
-// barracuda: 400 Mv/s
+// airacuda:  20 000 Mv/s
+// barracuda: 40 000 Mv/s
 
 // input divisible by 128
 #define CLIENTS 8192

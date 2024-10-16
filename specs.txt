@@ -1,0 +1,23 @@
+AIRACUDA
+
+Global memory:             8112 MB
+Multiprocessors:           15
+CUDA cores/MP:             128
+Total CUDA cores:          1920
+Shared memory per block:   49152 B
+Warp size:                 32
+Max threads/MP:            2048
+Max threads/block:         1024
+Max size of block (x,y,z): 1024,1024,64
+
+BARRACUDA
+
+Global memory:             11 GB
+Multiprocessors:           34
+CUDA cores/MP:             128
+Total CUDA cores:          4352
+Shared memory per block:   49152 B
+Warp size:                 32
+Max threads/MP:            1024
+Max threads/block:         1024
+Max size of block (x,y,z): 1024,1024,64

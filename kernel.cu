@@ -1,5 +1,3 @@
-// divide into 2 kernels? 1 for account calculation and 1 for sum?
-
 __global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods) {
     // int x = blockIdx.x * blockDim.x + threadIdx.x;
     // int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -17,7 +15,13 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
 }
 
 __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
-    int period_id = blockIdx.x * blockDim.x + threadIdx.x;
+    // partial sum within one block (one row)
+    __shared__ int partial_sum[256];
+
+    int period = blockIdx.x;
+    int tid = threadIdx.x;
+
+    partial_sum[tid] = 0;
 
     if (period_id < periods) {
         int acc_sum = 0;

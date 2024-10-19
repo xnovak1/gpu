@@ -43,11 +43,12 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
 }
 
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
-    int BLOCK_SIZE = 256; // 128
+    int BLOCK_SIZE = 128; // 128
     int N_BLOCKS = (clients + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     calc_account<<<N_BLOCKS, BLOCK_SIZE>>>(changes, account, sum, clients, periods);
 
+    BLOCK_SIZE = 128; // 1024 max
     N_BLOCKS = periods;
 
     calc_sum<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);

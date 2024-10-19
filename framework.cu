@@ -15,16 +15,16 @@
 int test_correctness() {
     int ret_val = 0;
 
+    // CPU data
+    int *changes, *account, *sum, *account_gpu, *sum_gpu;
+    changes = account = sum = account_gpu = sum_gpu = NULL;
+    // GPU counterparts
+    int *dchanges, *daccount, *dsum;
+    dchanges = daccount = dsum = NULL;
+
     // 3*3 = 9 iterations
     for (int CLIENTS = 2048; CLIENTS <= 8192; CLIENTS *= 2) {
         for (int PERIODS = 2048; PERIODS <= 8192; PERIODS *= 2) {
-            // CPU data
-            int *changes, *account, *sum, *account_gpu, *sum_gpu;
-            changes = account = sum = account_gpu = sum_gpu = NULL;
-            // GPU counterparts
-            int *dchanges, *daccount, *dsum;
-            dchanges = daccount = dsum = NULL;
-
             // allocate and set host memory
             changes = (int*)malloc(CLIENTS*PERIODS*sizeof(changes[0]));
             account = (int*)malloc(CLIENTS*PERIODS*sizeof(account[0]));
@@ -44,7 +44,7 @@ int test_correctness() {
             }
             cudaMemcpy(dchanges, changes, CLIENTS*PERIODS*sizeof(dchanges[0]), cudaMemcpyHostToDevice);
             cudaMemset(daccount, 0, CLIENTS*PERIODS*sizeof(daccount[0]));
-            cudaMemset(dsum, 0, CLIENTS*PERIODS*sizeof(dsum[0]));
+            cudaMemset(dsum, 0, PERIODS*sizeof(dsum[0]));
 
             solveCPU(changes, account, sum, CLIENTS, PERIODS);
             solveGPU(dchanges, daccount, dsum, CLIENTS, PERIODS);
@@ -65,24 +65,19 @@ int test_correctness() {
                     fprintf(stderr, "Sum data mismatch at index %i: %i should be %i :-(\n", i, sum_gpu[i], sum[i]);
                     goto cleanup;
                 }
-
-            continue;
-
-cleanup:
-            if (dchanges) cudaFree(dchanges);
-            if (daccount) cudaFree(daccount);
-            if (dsum) cudaFree(dsum);
-            if (changes) free(changes);
-            if (account) free(account);
-            if (sum) free(sum);
-            if (account_gpu) free(account_gpu);
-            if (sum_gpu) free (sum_gpu);
-
-            goto end;
+            
+            cudaFree(dchanges);
+            cudaFree(daccount);
+            cudaFree(dsum);
+            free(changes);
+            free(account);
+            free(sum);
+            free(account_gpu);
+            free(sum_gpu);
         }
     }
 
-end:
+cleanup:
     if (dchanges) cudaFree(dchanges);
     if (daccount) cudaFree(daccount);
     if (dsum) cudaFree(dsum);
@@ -130,7 +125,7 @@ void test_performance() {
     }
     cudaMemcpy(dchanges, changes, CLIENTS*PERIODS*sizeof(dchanges[0]), cudaMemcpyHostToDevice);
     cudaMemset(daccount, 0, CLIENTS*PERIODS*sizeof(daccount[0]));
-    cudaMemset(dsum, 0, CLIENTS*PERIODS*sizeof(dsum[0]));
+    cudaMemset(dsum, 0, PERIODS*sizeof(dsum[0]));
 
     // solve on CPU
     printf("Solving on CPU...\n");

@@ -1,22 +1,34 @@
+#define TILE_SIZE 32
+
 __global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods) {
-    // int x = blockIdx.x * blockDim.x + threadIdx.x;
-    // int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int row = blockIdx.y * TILE_SIZE + threadIdx.y;
+    int col = blockIdx.x * TILE_SIZE + threadIdx.x;
 
-    int client_id = blockIdx.x * blockDim.x + threadIdx.x;
+    __shared__ int tile[TILE_SIZE][TILE_SIZE];
 
-    if (client_id < clients) {
-        int acc_sum = 0;
-        for (int period = 0; period < periods; period++) {
-            int idx = period * clients + client_id; // Flattened index for (period, client)
-            acc_sum += changes[idx];
-            account[idx] = acc_sum;
-        }
+    // load data into shared memory
+    if (row < periods && col < clients) {
+        tile[threadIdx.y][threadIdx.x] = changes[row * clients + col];
+    } else {
+	tile[threadIdx.y][threadIdx.x] = 0;
     }
+    __syncthreads();
+
+    // accumulate across rows within this tile in shared memory
+    if (row < periods && col < clients) {
+	int acc_sum = tile[threadIdx.y][threadIdx.x];
+
+	// accumulate verically within the tile (for the given client)
+	for (int i = 1; i <= threadIdx.y; i++) {
+            acc_sum += tile[threadIdx.y - i][threadIdx.x];
+	}
+
+	account[row * clients + col] = acc_sum;
 }
 
 __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
     // partial sum within one block (one row)
-    __shared__ int partial_sum[256];
+    __shared__ int partial_sum[128];
 
     int period = blockIdx.x;
     int tid = threadIdx.x;
@@ -29,7 +41,7 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
     __syncthreads();
 
     // Perform parallel reduction to sum the row elements using shared memory
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
         if (tid < stride) {
             partial_sum[tid] += partial_sum[tid + stride];
         }
@@ -43,12 +55,12 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
 }
 
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
-    int BLOCK_SIZE = 128; // 128
-    int N_BLOCKS = (clients + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int BLOCK_SIZE = TILE_SIZE * TILE_SIZE; 
+    int N_BLOCKS = (clients / TILE_SIZE) * (periods / TILE_SIZE);
 
     calc_account<<<N_BLOCKS, BLOCK_SIZE>>>(changes, account, sum, clients, periods);
 
-    BLOCK_SIZE = 128; // 1024 max
+    BLOCK_SIZE = 128;
     N_BLOCKS = periods;
 
     calc_sum<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);

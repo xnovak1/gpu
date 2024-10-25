@@ -10,20 +10,21 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
     if (row < periods && col < clients) {
         tile[threadIdx.y][threadIdx.x] = changes[row * clients + col];
     } else {
-	tile[threadIdx.y][threadIdx.x] = 0;
+	    tile[threadIdx.y][threadIdx.x] = 0;
     }
     __syncthreads();
 
     // accumulate across rows within this tile in shared memory
     if (row < periods && col < clients) {
-	int acc_sum = tile[threadIdx.y][threadIdx.x];
+	    int acc_sum = tile[threadIdx.y][threadIdx.x];
 
-	// accumulate verically within the tile (for the given client)
-	for (int i = 1; i <= threadIdx.y; i++) {
+        // accumulate verically within the tile (for the given client)
+        for (int i = 1; i <= threadIdx.y; i++) {
             acc_sum += tile[threadIdx.y - i][threadIdx.x];
-	}
+	    }
 
-	account[row * clients + col] = acc_sum;
+	    account[row * clients + col] = acc_sum;
+    }
 }
 
 __global__ void calc_sum(int *account, int *sum, int clients, int periods) {

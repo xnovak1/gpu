@@ -91,6 +91,30 @@ cleanup:
     return ret_val;
 }
 
+void print_matrices(int *cpu, int *gpu, int rows, int cols) {
+    printf("\n");
+    printf("Correct matrix:\n\n");
+
+    for (int i = 0; i < rows; i++) {
+	for (int j = 0; j < cols; j++) {
+	    printf("%d ", cpu[i * cols + j]);
+	}
+
+	printf("|\n");
+    }
+
+    printf("\n");
+    printf("GPU matrix:\n\n");
+
+    for (int i = 0; i < rows; i++) {
+	for (int j = 0; j < cols; j++) {
+	    printf("%d ", gpu[i * cols + j]);
+	}
+
+	printf("|\n");
+    }
+}
+
 void test_performance() {
     const int CLIENTS = 8192;
     const int PERIODS = 8192;
@@ -168,6 +192,8 @@ void test_performance() {
     cleanup:
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
+
+    //  print_matrices(account, account_gpu, PERIODS, CLIENTS);
 
     if (dchanges) cudaFree(dchanges);
     if (daccount) cudaFree(daccount);

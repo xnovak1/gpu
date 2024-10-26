@@ -1,29 +1,28 @@
 #define TILE_SIZE 32
 
 __global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods) {
-    int row = blockIdx.y * TILE_SIZE + threadIdx.y;
-    int col = blockIdx.x * TILE_SIZE + threadIdx.x;
+    int ty = threadIdx.y;
+    int tx = threadIdx.x;
+	
+    int row = blockIdx.y * TILE_SIZE + ty;
+    int col = blockIdx.x * TILE_SIZE + tx;
 
     __shared__ int tile[TILE_SIZE][TILE_SIZE];
 
     // load data into shared memory
     if (row < periods && col < clients) {
-        tile[threadIdx.y][threadIdx.x] = changes[row * clients + col];
+        tile[ty][tx] = changes[row * clients + col];
     } else {
-	    tile[threadIdx.y][threadIdx.x] = 0;
+        tile[ty][tx] = 0;
     }
     __syncthreads();
 
     // accumulate across rows within this tile in shared memory
-    if (row < periods && col < clients) {
-	    int acc_sum = tile[threadIdx.y][threadIdx.x];
-
-        // accumulate verically within the tile (for the given client)
-        for (int i = 1; i <= threadIdx.y; i++) {
-            acc_sum += tile[threadIdx.y - i][threadIdx.x];
-	    }
-
-	    account[row * clients + col] = acc_sum;
+    for (int stride = 1; stride < TILE_SIZE; stride *= 2) {
+        int val = (ty >= stride) ? tile[ty - stride][tx] : 0;
+	__syncthreads();
+	tile[ty][tx] += val;
+	__syncthreads();
     }
 }
 

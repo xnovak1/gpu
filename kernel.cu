@@ -17,13 +17,7 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
     }
     __syncthreads();
 
-    // accumulate across rows within this tile in shared memory
-    for (int stride = 1; stride < TILE_SIZE; stride *= 2) {
-        int val = (ty >= stride) ? tile[ty - stride][tx] : 0;
-	__syncthreads();
-	tile[ty][tx] += val;
-	__syncthreads();
-    }
+    account[row * clients + col] = tile[ty][tx];
 }
 
 __global__ void calc_sum(int *account, int *sum, int clients, int periods) {

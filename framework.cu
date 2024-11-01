@@ -166,7 +166,7 @@ void test_performance() {
     // solve on GPU
     printf("Solving on GPU...\n");
     cudaEventRecord(start, 0);
-    //for(int i =0; i < 100; i++) 
+    // for(int i =0; i < 100; i++) 
         solveGPU(dchanges, daccount, dsum, CLIENTS, PERIODS);
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);

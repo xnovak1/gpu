@@ -11,10 +11,10 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
     __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
     int prev_block_val = tile_y == 0 ? 0 : account[(row - 1) * clients + col];
 
-    // load data into shared memory
+    // Load data into shared memory
     if (row < periods && col < clients) {
         tile[ty][tx] = changes[row * clients + col] + prev_block_val;
-    } else { // remove unnecessary else?
+    } else { // Remove unnecessary else?
         tile[ty][tx] = 0;
     }
     __syncthreads();
@@ -58,7 +58,6 @@ __global__ void calc_sum__parallel(int *account, int *sum, int clients, int peri
 }
 
 __inline__ __device__ int warpReduceSum(int val) {
-    // Reduce within a warp using shfl_down_sync
     for (int offset = warpSize >> 1; offset > 0; offset >>= 1) {
         val += __shfl_down_sync(0xFFFFFFFF, val, offset);
     }
@@ -66,16 +65,14 @@ __inline__ __device__ int warpReduceSum(int val) {
 }
 
 __global__ void calc_sum__parallel_warp(int *account, int *sum, int clients, int periods) {
-    int period = blockIdx.x;  // Each block handles one row (one period)
-    int tid = threadIdx.x;    // Thread ID within the block
+    int period = blockIdx.x;
+    int tid = threadIdx.x;
 
-    int lane = tid % warpSize; // Lane within the warp
-    int warpId = tid / warpSize; // Warp ID within the block
+    int lane = tid % warpSize;
+    int warpId = tid / warpSize;
 
-    // Shared memory for the partial sums from each warp
     __shared__ int warp_sums[32];  // Max 32 warps per block
 
-    // Initialize the thread's local sum
     int local_sum = 0;
 
     // Each thread accumulates a portion of the row's elements

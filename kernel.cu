@@ -1,20 +1,28 @@
 #define TILE_SIZE_X 32
 #define TILE_SIZE_Y 32
 
-__global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods, int tile_y) {
+__global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods, int *row_counter) {
     int ty = threadIdx.y;
     int tx = threadIdx.x;
 	
-    int row = tile_y * TILE_SIZE_Y + ty;
+    int row = blockIdx.y * TILE_SIZE_Y + ty;
     int col = blockIdx.x * TILE_SIZE_X + tx;
 
     __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
-    int prev_block_val = tile_y == 0 ? 0 : account[(row - 1) * clients + col];
+
+    // Ensure that each block row waits for the previous row to finish
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        // Wait until the counter allows this row to proceed
+        while (atomicAdd(row_counter, 0) != blockIdx.y);
+    }
+    __syncthreads();
+
+    int prev_block_val = blockIdx.y == 0 ? 0 : account[(row - 1) * clients + col];
 
     // Load data into shared memory
     if (row < periods && col < clients) {
         tile[ty][tx] = changes[row * clients + col] + prev_block_val;
-    } else { // Remove unnecessary else?
+    } else {
         tile[ty][tx] = 0;
     }
     __syncthreads();
@@ -27,6 +35,18 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
     }
 
     account[row * clients + col] = tile[ty][tx];
+
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        atomicAdd(row_counter, 1);
+    }
+}
+
+void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
+    dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
+    dim3 gridDim(clients / blockDim.x);
+
+    for (int i = 0; i < periods / TILE_SIZE_Y; i++)
+        calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, i);
 }
 
 __global__ void calc_sum__parallel(int *account, int *sum, int clients, int periods) {
@@ -103,10 +123,10 @@ __global__ void calc_sum__parallel_warp(int *account, int *sum, int clients, int
 
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
     dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
-    dim3 gridDim(clients / blockDim.x);
+    dim3 gridDim(clients / blockDim.x, periods / blockDim.y);
 
-    for (int i = 0; i < periods / TILE_SIZE_Y; i++)
-        calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, i);
+    int row_counter = 0;
+    calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, &row_counter);
 
     int BLOCK_SIZE = 128;
     int N_BLOCKS = periods;

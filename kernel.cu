@@ -1,21 +1,30 @@
-#define TILE_SIZE 32
+#define TILE_SIZE_X 32
+#define TILE_SIZE_Y 32
 
-__global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods) {
+__global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods, int tile_y) {
     int ty = threadIdx.y;
     int tx = threadIdx.x;
 	
-    int row = blockIdx.y * TILE_SIZE + ty;
-    int col = blockIdx.x * TILE_SIZE + tx;
+    int row = tile_y * TILE_SIZE_Y + ty;
+    int col = blockIdx.x * TILE_SIZE_X + tx;
 
-    __shared__ int tile[TILE_SIZE][TILE_SIZE];
+    __shared__ int tile[TILE_SIZE_X][TILE_SIZE_Y];
+    int prev_block_val = tile_y == 0 ? 0 : changes[row * clients - clients + col];
 
     // load data into shared memory
     if (row < periods && col < clients) {
-        tile[ty][tx] = changes[row * clients + col];
-    } else {
+        tile[ty][tx] = changes[row * clients + col] + prev_block_val;
+    } else { // remove unnecessary else?
         tile[ty][tx] = 0;
     }
     __syncthreads();
+
+    for (int stride = 1; stride < TILE_SIZE_Y; stride *= 2) {
+        int val = ty >= stride ? tile[ty - stride][tx] : 0;
+        __syncthreads();
+        tile[ty][tx] += val;
+        __syncthreads();
+    }
 
     account[row * clients + col] = tile[ty][tx];
 }
@@ -49,10 +58,11 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
 }
 
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
-    int BLOCK_SIZE = TILE_SIZE * TILE_SIZE; 
-    int N_BLOCKS = (clients / TILE_SIZE) * (periods / TILE_SIZE);
+    dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
+    dim3 gridDim(clients / blockDim.x);
 
-    calc_account<<<N_BLOCKS, BLOCK_SIZE>>>(changes, account, sum, clients, periods);
+    for (int i = 0; i < periods / TILE_SIZE_Y; i++)
+        calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, i);
 
     BLOCK_SIZE = 128;
     N_BLOCKS = periods;

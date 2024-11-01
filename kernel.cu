@@ -8,8 +8,8 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
     int row = tile_y * TILE_SIZE_Y + ty;
     int col = blockIdx.x * TILE_SIZE_X + tx;
 
-    __shared__ int tile[TILE_SIZE_X][TILE_SIZE_Y];
-    int prev_block_val = tile_y == 0 ? 0 : changes[row * clients - clients + col];
+    __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
+    int prev_block_val = tile_y == 0 ? 0 : account[(row - 1) * clients + col];
 
     // load data into shared memory
     if (row < periods && col < clients) {
@@ -64,8 +64,8 @@ void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
     for (int i = 0; i < periods / TILE_SIZE_Y; i++)
         calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, i);
 
-    BLOCK_SIZE = 128;
-    N_BLOCKS = periods;
+    int BLOCK_SIZE = 128;
+    int N_BLOCKS = periods;
 
     calc_sum<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);
 }

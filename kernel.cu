@@ -29,7 +29,7 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
     account[row * clients + col] = tile[ty][tx];
 }
 
-__global__ void calc_sum(int *account, int *sum, int clients, int periods) {
+__global__ void calc_sum__parallel(int *account, int *sum, int clients, int periods) {
     // partial sum within one block (one row)
     __shared__ int partial_sum[128];
 
@@ -57,6 +57,53 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
     }
 }
 
+__inline__ __device__ int warpReduceSum(int val) {
+    // Reduce within a warp using shfl_down_sync
+    for (int offset = warpSize >> 1; offset > 0; offset >>= 1) {
+        val += __shfl_down_sync(0xFFFFFFFF, val, offset);
+    }
+    return val;
+}
+
+__global__ void calc_sum__parallel_warp(int *account, int *sum, int clients, int periods) {
+    int period = blockIdx.x;  // Each block handles one row (one period)
+    int tid = threadIdx.x;    // Thread ID within the block
+
+    int lane = tid % warpSize; // Lane within the warp
+    int warpId = tid / warpSize; // Warp ID within the block
+
+    // Shared memory for the partial sums from each warp
+    __shared__ int warp_sums[32];  // Max 32 warps per block
+
+    // Initialize the thread's local sum
+    int local_sum = 0;
+
+    // Each thread accumulates a portion of the row's elements
+    for (int col = tid; col < clients; col += blockDim.x) {
+        local_sum += account[period * clients + col];
+    }
+
+    // Perform warp-level reduction
+    local_sum = warpReduceSum(local_sum);
+
+    // Store the result of each warp's reduction in shared memory
+    if (lane == 0) {
+        warp_sums[warpId] = local_sum;
+    }
+    __syncthreads();
+
+    // The first warp in the block reduces the partial sums from each warp
+    if (warpId == 0) {
+        local_sum = (tid < blockDim.x / warpSize) ? warp_sums[lane] : 0;
+        if (lane == 0) {
+            for (int i = 1; i < blockDim.x / warpSize; i++) {
+                local_sum += warp_sums[i];
+            }
+            sum[period] = local_sum; // Write the final sum to the output
+        }
+    }
+}
+
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
     dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
     dim3 gridDim(clients / blockDim.x);
@@ -67,5 +114,5 @@ void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
     int BLOCK_SIZE = 128;
     int N_BLOCKS = periods;
 
-    calc_sum<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);
+    calc_sum__parallel<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);
 }

@@ -1,27 +1,22 @@
 #define TILE_SIZE_X 32
 #define TILE_SIZE_Y 32
 
-__global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods, int *row_counter) {
+__device__ unsigned int row_blocks_done[128 / TILE_SIZE_Y] = { 0 };
+__shared__ bool is_last_block_done[128 / TILE_SIZE_Y];
+
+__global__ void calc_account(int *changes, int *account, int *sum, int clients, int periods) {
     int ty = threadIdx.y;
     int tx = threadIdx.x;
 	
     int row = blockIdx.y * TILE_SIZE_Y + ty;
     int col = blockIdx.x * TILE_SIZE_X + tx;
 
+    __shared__ int threads_done;
     __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
-
-    // Ensure that each block row waits for the previous row to finish
-    if (threadIdx.x == 0 && threadIdx.y == 0) {
-        // Wait until the counter allows this row to proceed
-        while (atomicAdd(row_counter, 0) != blockIdx.y);
-    }
-    __syncthreads();
-
-    int prev_block_val = blockIdx.y == 0 ? 0 : account[(row - 1) * clients + col];
 
     // Load data into shared memory
     if (row < periods && col < clients) {
-        tile[ty][tx] = changes[row * clients + col] + prev_block_val;
+        tile[ty][tx] = changes[row * clients + col];
     } else {
         tile[ty][tx] = 0;
     }
@@ -34,19 +29,46 @@ __global__ void calc_account(int *changes, int *account, int *sum, int clients, 
         __syncthreads();
     }
 
-    account[row * clients + col] = tile[ty][tx];
-
-    if (threadIdx.x == 0 && threadIdx.y == 0) {
-        atomicAdd(row_counter, 1);
+    if (blockIdx.y == 0) {
+       atomicAdd(&threads_done, 1);
     }
-}
+    __syncthreads();
 
-void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
-    dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
-    dim3 gridDim(clients / blockDim.x);
+    if (blockIdx.y == 0) {
+        if (threads_done == TILE_SIZE_X * TILE_SIZE_Y) {
+	    account[row * clients + col] = tile[ty][tx];
+	    if (tx == 0 && ty == 0) {
+	        atomicAdd(&row_blocks_done[blockIdx.y], 1);
+	    }
+	}
+    }
+    __syncthreads();
 
-    for (int i = 0; i < periods / TILE_SIZE_Y; i++)
-        calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, i);
+    if (blockIdx.y == 0 && row_blocks_done[blockIdx.y] == gridDim.x) {
+        is_last_block_done[blockIdx.y] = true;
+    }
+    __syncthreads();
+
+    if (blockIdx.y != 0) {
+        do {} while (!is_last_block_done[blockIdx.y - 1]);
+	int prev_block_val = account[(row - 1 - ty) * clients + col];
+	tile[ty][tx] += prev_block_val;
+	threads_done++;
+	__syncthreads();
+
+	if (threads_done == TILE_SIZE_X * TILE_SIZE_Y) {
+	    account[row * clients + col] = tile[ty][tx];
+	    __threadfence();
+	    if (tx == 0 && ty == 0) {
+	        atomicAdd(&row_blocks_done[blockIdx.y], 1);
+	    }
+	}
+	__syncthreads();
+
+	if (row_blocks_done[blockIdx.y] == gridDim.x) {
+	    is_last_block_done[blockIdx.y] = true;
+	}
+    }
 }
 
 __global__ void calc_sum__parallel(int *account, int *sum, int clients, int periods) {
@@ -125,8 +147,7 @@ void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
     dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
     dim3 gridDim(clients / blockDim.x, periods / blockDim.y);
 
-    int row_counter = 0;
-    calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, &row_counter);
+    calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
 
     int BLOCK_SIZE = 128;
     int N_BLOCKS = periods;

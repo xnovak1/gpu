@@ -4,92 +4,8 @@
 
 // nvcc -o framework framework.cu
 
-// airacuda:  20 000 Mv/s
-// barracuda: 40 000 Mv/s
-
-// input divisible by 128
-
 #include "kernel.cu"
 #include "kernel_CPU.C"
-
-int test_correctness() {
-    int ret_val = 0;
-
-    // CPU data
-    int *changes, *account, *sum, *account_gpu, *sum_gpu;
-    changes = account = sum = account_gpu = sum_gpu = NULL;
-    // GPU counterparts
-    int *dchanges, *daccount, *dsum;
-    dchanges = daccount = dsum = NULL;
-
-    // 3*3 = 9 iterations
-    for (int CLIENTS = 2048; CLIENTS <= 8192; CLIENTS *= 2) {
-        for (int PERIODS = 2048; PERIODS <= 8192; PERIODS *= 2) {
-            // allocate and set host memory
-            changes = (int*)malloc(CLIENTS*PERIODS*sizeof(changes[0]));
-            account = (int*)malloc(CLIENTS*PERIODS*sizeof(account[0]));
-            sum = (int*)malloc(PERIODS*sizeof(sum[0]));
-            account_gpu = (int*)malloc(CLIENTS*PERIODS*sizeof(account_gpu[0]));
-            sum_gpu = (int*)malloc(PERIODS*sizeof(sum[0]));
-
-            for (int i = 0; i < CLIENTS*PERIODS; i++)
-                changes[i] = int(100.0f*(float)rand() / float(RAND_MAX));
-        
-            // allocate and set device memory
-            if (cudaMalloc((void**)&dchanges, CLIENTS*PERIODS*sizeof(dchanges[0])) != cudaSuccess
-            || cudaMalloc((void**)&daccount, CLIENTS*PERIODS*sizeof(daccount[0])) != cudaSuccess 
-            || cudaMalloc((void**)&dsum, PERIODS*sizeof(dsum[0])) != cudaSuccess){
-                fprintf(stderr, "Device memory allocation error!\n");
-                goto cleanup;
-            }
-            cudaMemcpy(dchanges, changes, CLIENTS*PERIODS*sizeof(dchanges[0]), cudaMemcpyHostToDevice);
-            cudaMemset(daccount, 0, CLIENTS*PERIODS*sizeof(daccount[0]));
-            cudaMemset(dsum, 0, PERIODS*sizeof(dsum[0]));
-
-            solveCPU(changes, account, sum, CLIENTS, PERIODS);
-            solveGPU(dchanges, daccount, dsum, CLIENTS, PERIODS);
-
-            // check GPU results
-            cudaMemcpy(account_gpu, daccount, CLIENTS*PERIODS*sizeof(daccount[0]), cudaMemcpyDeviceToHost);
-            for (int j = 0; j < PERIODS; j++)
-                for (int i = 0; i < CLIENTS; i++)
-                    if (account[j*CLIENTS+i] != account_gpu[j*CLIENTS+i]) {
-                        ret_val = -1;
-                        fprintf(stderr, "Account data mismatch at index %i, %i: %i should be %i :-(\n", i, j, account_gpu[j*CLIENTS+i], account[j*CLIENTS+i]);
-                        goto cleanup;
-                    }
-            cudaMemcpy(sum_gpu, dsum, PERIODS*sizeof(dsum[0]), cudaMemcpyDeviceToHost);
-            for (int i = 0; i < PERIODS; i++)
-                if (sum[i] != sum_gpu[i]) {
-                    ret_val = -1;
-                    fprintf(stderr, "Sum data mismatch at index %i: %i should be %i :-(\n", i, sum_gpu[i], sum[i]);
-                    goto cleanup;
-                }
-            
-            if (dchanges) cudaFree(dchanges);
-            if (daccount) cudaFree(daccount);
-            if (dsum) cudaFree(dsum);
-            if (changes) free(changes);
-            if (account) free(account);
-            if (sum) free(sum);
-            if (account_gpu) free(account_gpu);
-            if (sum_gpu) free(sum_gpu);
-	    printf("loop\n");
-        }
-    }
-
-cleanup:
-    if (dchanges) cudaFree(dchanges);
-    if (daccount) cudaFree(daccount);
-    if (dsum) cudaFree(dsum);
-    if (changes) free(changes); // seg fault?!
-    if (account) free(account);
-    if (sum) free(sum);
-    if (account_gpu) free(account_gpu);
-    if (sum_gpu) free (sum_gpu);
-
-    return ret_val;
-}
 
 void print_matrices(int *cpu, int *gpu, int rows, int cols) {
     printf("\n");
@@ -193,7 +109,8 @@ void test_performance() {
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
 
-    //  print_matrices(account, account_gpu, PERIODS, CLIENTS);
+    // print_matrices(account, account_gpu, PERIODS, CLIENTS);
+    // print_matrices(sum, sum_gpu, 1, PERIODS);
 
     if (dchanges) cudaFree(dchanges);
     if (daccount) cudaFree(daccount);
@@ -218,8 +135,6 @@ int main(int argc, char **argv){
     cudaGetDeviceProperties(&deviceProp, device);
     printf("Using device %d: \"%s\"\n", device, deviceProp.name);
 
-    // test_correctness();
-    // printf("Tests OK.\n\n");
     test_performance();
     
 

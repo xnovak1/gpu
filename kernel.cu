@@ -58,29 +58,32 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
 }
 
 __global__ void calc_account_8192(int *changes, int *account, int *sum, int clients, int periods) {
-    __shared__ int shared_sum[periods];
+    // __shared__ int shared_sum[periods];
     int clientIdx = blockIdx.x * blockDim.x + threadIdx.x;
-    int localIdx = threadIdx.x;
 
-    shared_sum[localIdx] = 0;
-    __syncthreads();
+    // shared_sum[localIdx] = 0;
+    // __syncthreads();
 
     for (int j = 0; j < periods; j++) {
         int changeIdx = j * clients + clientIdx;
 	int accountIdx = j * clients + clientIdx;
+        int deposit = 0;
 
 	if (j == 0) {
-	    account[accountIdx] = changes[changeIdx];
+	    deposit = changes[changeIdx];
 	} else {
-	    account[accountIdx] = account[(j - 1) * clients + clientIdx] + changes[changeIdx];
+	    deposit = account[(j - 1) * clients + clientIdx] + changes[changeIdx];
 	}
 
-	atomicAdd(&shared_sum[j], account[accountIdx]);
+	account[accountIdx] = deposit;
+	atomicAdd(&sum[j], deposit);
+
+	// atomicAdd(&shared_sum[j], account[accountIdx]);
     }
     __syncthreads();
 
-    if (blockIdx.x == 0)
-	atomicAdd(&sum[localIdx], shared_sum[localIdx]);
+    // if (blockIdx.x == 0)
+	// atomicAdd(&sum[localIdx], shared_sum[localIdx]);
 }
 
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {

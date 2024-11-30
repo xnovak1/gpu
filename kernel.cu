@@ -63,8 +63,10 @@ __global__ void calc_8192(int *changes, int *account, int *sum, int clients, int
 
     for (int i = 0; i < 8192 / TILE_SIZE_Y; i++) {
         __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
-        for (int i = 0; i < TILE_SIZE_Y; i++) {
-            tile[i][clientIdx] = 0;
+        for (int k = 0; k < TILE_SIZE_Y; k++) {
+	    int periodIdx = TILE_SIZE_Y * i + k;
+            tile[k][threadIdx.x] = changes[periodIdx * 8192 + clientIdx];
+	    //TODO: we can read changes by row
         }
         __syncthreads();
 
@@ -73,12 +75,12 @@ __global__ void calc_8192(int *changes, int *account, int *sum, int clients, int
             int deposit = 0;
 
             if (j == 0) {
-                deposit = tile[periodIdx][clientIdx] + prev_val;
+                deposit = tile[j][threadIdx.x] + prev_val;
             } else {
-                deposit = tile[periodIdx - 1][clientIdx] + tile[periodIdx][clientIdx];
+                deposit = tile[j - 1][threadIdx.x] + tile[j][threadIdx.x];
             }
 
-            tile[periodIdx][clientIdx] = deposit;
+            tile[j][threadIdx.x] = deposit;
             account[periodIdx * 8192 + clientIdx] = deposit;
 
             if (j == TILE_SIZE_Y - 1) {
@@ -94,8 +96,8 @@ __global__ void calc_8192(int *changes, int *account, int *sum, int clients, int
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
     if (clients == 8192 && periods == 8192) {
         dim3 blockDim(TILE_SIZE_X);
-	    dim3 gridDim(8192 / TILE_SIZE_X);
-	    calc_8192<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
+	dim3 gridDim(8192 / TILE_SIZE_X);
+	calc_8192<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
     } else {
         dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
         dim3 gridDim(clients / blockDim.x);

@@ -58,51 +58,34 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
 }
 
 __global__ void calc_account_8192(int *changes, int *account, int *sum, int clients, int periods) {
-    // __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
     int clientIdx = blockIdx.x * blockDim.x + threadIdx.x;
-    // int clientIdx = blockIdx.x;
-
-    // shared_sum[localIdx] = 0;
-    // __syncthreads();
+    __shared__ int shared_sum[8192];
+    for (int i = 0; i < 64; i++)
+        shared_sum[threadIdx.x * 64 + i] = 0;
 
     for (int j = 0; j < periods; j++) {
-	int accountIdx = j * clients + clientIdx;
+	    int accountIdx = j * clients + clientIdx;
         int deposit = 0;
 
-	if (j == 0) {
-	    deposit = changes[accountIdx];
-	} else {
-	    deposit = account[(j - 1) * clients + clientIdx] + changes[accountIdx];
-	}
+        if (j == 0) {
+            deposit = changes[accountIdx];
+        } else {
+            deposit = account[(j - 1) * clients + clientIdx] + changes[accountIdx];
+        }
 
-	account[accountIdx] = deposit;
-	atomicAdd(&sum[j], deposit);
-
-	// atomicAdd(&shared_sum[j], account[accountIdx]);
+        account[accountIdx] = deposit;
+        atomicAdd(&shared_sum[j], deposit);
     }
     __syncthreads();
 
-    // if (threadIdx.x == 0)
-	// atomicAdd(&sum[localIdx], shared_sum[localIdx]);
+    for (int i = 0; i < 64; i++) {
+        int idx = threadIdx.x * 64 + i;
+        atomicAdd(&sum[idx], shared_sum[idx]);
+    }
 }
 
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
-    // if (clients == 8192 && periods == 8192) {
-        dim3 blockDim(128);
+    dim3 blockDim(128);
 	dim3 gridDim((clients + blockDim.x - 1) / blockDim.x);
-	// dim3 gridDim(8192);
-
 	calc_account_8192<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
-    /*} else {
-        dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
-        dim3 gridDim(clients / blockDim.x);
-
-        for (int i = 0; i < periods / TILE_SIZE_Y; i++)
-            calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, i);
-
-        int BLOCK_SIZE = 128;
-        int N_BLOCKS = periods;
-
-        calc_sum<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);
-    }*/
 }

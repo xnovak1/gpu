@@ -60,13 +60,13 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
 __global__ void calc_8192(int *changes, int *account, int *sum, int clients, int periods) {
     int clientIdx = blockIdx.x * blockDim.x + threadIdx.x;
     int prev_val = 0;
+    int tile_x_idx = TILE_SIZE_X * blockIdx.x;
 
     for (int i = 0; i < 8192 / TILE_SIZE_Y; i++) {
         __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
+	int periodIdx__ = TILE_SIZE_Y * i + threadIdx.x;
         for (int k = 0; k < TILE_SIZE_Y; k++) {
-	    int periodIdx = TILE_SIZE_Y * i + k;
-            tile[k][threadIdx.x] = changes[periodIdx * 8192 + clientIdx];
-	    //TODO: we can read changes by row
+            tile[threadIdx.x][k] = changes[periodIdx__ * 8192 + tile_x_idx + k];
         }
         __syncthreads();
 

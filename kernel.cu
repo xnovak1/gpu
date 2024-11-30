@@ -57,35 +57,55 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
     }
 }
 
-__global__ void calc_account_8192(int *changes, int *account, int *sum, int clients, int periods) {
+__global__ void calc_8192(int *changes, int *account, int *sum, int clients, int periods) {
     int clientIdx = blockIdx.x * blockDim.x + threadIdx.x;
-    __shared__ int shared_sum[8192];
-    for (int i = 0; i < 64; i++)
-        shared_sum[threadIdx.x * 64 + i] = 0;
+    int prev_val = 0;
 
-    for (int j = 0; j < periods; j++) {
-	    int accountIdx = j * clients + clientIdx;
-        int deposit = 0;
-
-        if (j == 0) {
-            deposit = changes[accountIdx];
-        } else {
-            deposit = account[(j - 1) * clients + clientIdx] + changes[accountIdx];
+    for (int i = 0; i < 8192 / TILE_SIZE_Y; i++) {
+        __shared__ int tile[TILE_SIZE_Y][TILE_SIZE_X];
+        for (int i = 0; i < TILE_SIZE_Y; i++) {
+            tile[i][clientIdx] = 0;
         }
+        __syncthreads();
 
-        account[accountIdx] = deposit;
-        atomicAdd(&shared_sum[j], deposit);
-    }
-    __syncthreads();
+        for (int j = 0; j < TILE_SIZE_Y; j++) {
+            int periodIdx = TILE_SIZE_Y * i + j;
+            int deposit = 0;
 
-    for (int i = 0; i < 64; i++) {
-        int idx = threadIdx.x * 64 + i;
-        atomicAdd(&sum[idx], shared_sum[idx]);
+            if (j == 0) {
+                deposit = tile[periodIdx][clientIdx] + prev_val;
+            } else {
+                deposit = tile[periodIdx - 1][clientIdx] + tile[periodIdx][clientIdx];
+            }
+
+            tile[periodIdx][clientIdx] = deposit;
+            account[periodIdx * 8192 + clientIdx] = deposit;
+
+            if (j == TILE_SIZE_Y - 1) {
+                prev_val = deposit;
+            }
+
+            atomicAdd(&sum[periodIdx], deposit);
+        }
+        __syncthreads();
     }
 }
 
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
-    dim3 blockDim(128);
-	dim3 gridDim((clients + blockDim.x - 1) / blockDim.x);
-	calc_account_8192<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
+    if (clients == 8192 && periods == 8192) {
+        dim3 blockDim(TILE_SIZE_X);
+	    dim3 gridDim(8192 / TILE_SIZE_X);
+	    calc_8192<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
+    } else {
+        dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
+        dim3 gridDim(clients / blockDim.x);
+
+        for (int i = 0; i < periods / TILE_SIZE_Y; i++)
+            calc_account<<<gridDim, blockDim>>>(changes, account, sum, clients, periods, i);
+
+        int BLOCK_SIZE = 128;
+        int N_BLOCKS = periods;
+
+        calc_sum<<<N_BLOCKS, BLOCK_SIZE>>>(account, sum, clients, periods);
+    }
 }

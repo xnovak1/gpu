@@ -57,7 +57,7 @@ __global__ void calc_sum(int *account, int *sum, int clients, int periods) {
     }
 }
 
-__global__ void calc_fast(int *changes, int *account, int *sum, int clients, int periods) {
+__global__ void calc_8192(int *changes, int *account, int *sum, int clients, int periods) {
     int clientIdx = blockIdx.x * blockDim.x + threadIdx.x;
     int prev_val = 0;
 
@@ -92,12 +92,34 @@ __global__ void calc_fast(int *changes, int *account, int *sum, int clients, int
     }
 }
 
+__global__ void calc_512(int *changes, int *account, int *sum, int clients, int periods) {
+    int clientIdx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    for (int j = 0; j < periods; j++) {
+        int accountIdx = j * clients + clientIdx;
+        int deposit = 0;
+
+        if (j == 0) {
+            deposit = changes[accountIdx];
+        } else {
+            deposit = account[(j - 1) * clients + clientIdx] + changes[accountIdx];
+        }
+
+        account[accountIdx] = deposit;
+        atomicAdd(&sum[j], deposit);
+    }
+    __syncthreads();
+}
+
 void solveGPU(int *changes, int *account, int *sum, int clients, int periods) {
-    if ((clients == 8192 && periods == 8192) ||
-        (clients == 512 && periods == 512)) {
+    if (clients == 8192 && periods == 8192) {
         dim3 blockDim(TILE_SIZE_X);
-        dim3 gridDim(clients / TILE_SIZE_X);
-        calc_fast<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
+        dim3 gridDim(8192 / TILE_SIZE_X);
+        calc_8192<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
+    } else if (clients == 512 && periods == 512) {
+        dim3 blockDim(128);
+        dim3 gridDim((512 + blockDim.x - 1) / blockDim.x);
+        calc_512<<<gridDim, blockDim>>>(changes, account, sum, clients, periods);
     } else {
         dim3 blockDim(TILE_SIZE_X, TILE_SIZE_Y);
         dim3 gridDim(clients / blockDim.x);

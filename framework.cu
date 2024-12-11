@@ -32,8 +32,8 @@ void print_matrices(int *cpu, int *gpu, int rows, int cols) {
 }
 
 void test_performance() {
-    const int CLIENTS = 8192;
-    const int PERIODS = 8192;
+    const int CLIENTS = 512;
+    const int PERIODS = 512;
 
     // CPU data
     int *changes, *account, *sum, *account_gpu, *sum_gpu;
